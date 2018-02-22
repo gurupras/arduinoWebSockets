@@ -95,7 +95,7 @@ WebSocketsClient::WebSocketsClient() {
     _cbEvent = NULL;
     _client.num = 0;
     _client.extraHeaders = WEBSOCKETS_STRING("Origin: file://");
-	handlers = Vector<int>();
+	handlers = LinkedList<int>();
 	onEvent(defaultWebSocketEvent);
 }
 
@@ -111,7 +111,7 @@ void WebSocketsClient::trigger_event_listeners(char *event, char *data)
 		return;
 	}
 	for(int i = 0; i < evt_handlers->handlers.size(); i++) {
-		void (*fn)(char *) = (void (*)(char *)) evt_handlers->handlers[i];
+		void (*fn)(char *) = (void (*)(char *)) evt_handlers->handlers.get(i);
 		fn(data);
 	}
 }
@@ -119,7 +119,7 @@ void WebSocketsClient::trigger_event_listeners(char *event, char *data)
 struct event_handlers *WebSocketsClient::get_event_handler(char *event)
 {
 	for (int i = 0; i < handlers.size(); i++) {
-		struct event_handlers *evt_handlers = (struct event_handlers *) handlers[i];
+		struct event_handlers *evt_handlers = (struct event_handlers *) handlers.get(i);
 		if(strcmp(event, evt_handlers->event) == 0) {
 			Serial.printf("Found event handlers for event: %s\n", event);
 			return evt_handlers;
@@ -136,10 +136,10 @@ void WebSocketsClient::on(char *event, void (*handler_fn)(char *data))
 			evt_handlers = (struct event_handlers *) malloc(sizeof(struct event_handlers));
 			evt_handlers->event = (char *) malloc(strlen(event));
 			strcpy(evt_handlers->event, event);
-			evt_handlers->handlers = Vector<int>();
-			this->handlers.push_back((int) evt_handlers);
+			evt_handlers->handlers = LinkedList<int>();
+			this->handlers.add((int) evt_handlers);
 		}
-		evt_handlers->handlers.push_back((int) handler_fn);
+		evt_handlers->handlers.add((int) handler_fn);
 }
 
 int WebSocketsClient::emit(char *event, char *data)
