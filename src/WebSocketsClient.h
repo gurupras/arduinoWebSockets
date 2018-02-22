@@ -25,20 +25,31 @@
 #ifndef WEBSOCKETSCLIENT_H_
 #define WEBSOCKETSCLIENT_H_
 
+#include <Vector.h>
+
 #include "WebSockets.h"
+
+struct event_handlers {
+	char *event;
+	Vector<int> handlers;
+};
 
 class WebSocketsClient: private WebSockets {
     public:
 #ifdef __AVR__
-        typedef void (*WebSocketClientEvent)(WStype_t type, uint8_t * payload, size_t length);
+        typedef void (*WebSocketClientEvent)(WebSocketsClient *client, WStype_t type, uint8_t * payload, size_t length);
 #else
-        typedef std::function<void (WStype_t type, uint8_t * payload, size_t length)> WebSocketClientEvent;
+        typedef std::function<void (WebSocketsClient *client, WStype_t type, uint8_t * payload, size_t length)> WebSocketClientEvent;
 #endif
-
 
         WebSocketsClient(void);
         virtual ~WebSocketsClient(void);
 
+		int emit(char *event, char *data);
+		void on(char *event, void (*handler)(char *data));
+		struct event_handlers *get_event_handler(char *event);
+		void trigger_event_listeners(char *event, char *data);
+		
         void begin(const char *host, uint16_t port, const char * url = "/", const char * protocol = "arduino");
         void begin(String host, uint16_t port, String url = "/", String protocol = "arduino");
 
@@ -89,6 +100,8 @@ class WebSocketsClient: private WebSockets {
         String _host;
         uint16_t _port;
 
+		Vector<int> handlers;
+		
 #if (WEBSOCKETS_NETWORK_TYPE == NETWORK_ESP8266) || (WEBSOCKETS_NETWORK_TYPE == NETWORK_ESP32)
         String _fingerprint;
 #endif
@@ -124,9 +137,9 @@ class WebSocketsClient: private WebSockets {
          * @param payload uint8_t *
          * @param length size_t
          */
-        virtual void runCbEvent(WStype_t type, uint8_t * payload, size_t length) {
+        virtual void runCbEvent(WebSocketsClient *client, WStype_t type, uint8_t * payload, size_t length) {
             if(_cbEvent) {
-                _cbEvent(type, payload, length);
+                _cbEvent(client, type, payload, length);
             }
         }
 

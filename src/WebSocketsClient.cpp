@@ -25,15 +25,145 @@
 #include "WebSockets.h"
 #include "WebSocketsClient.h"
 
+#include <climits>
+
+template <typename T>
+T swap_endian(T u)
+{
+    static_assert (CHAR_BIT == 8, "CHAR_BIT != 8");
+
+    union
+    {
+        T u;
+        unsigned char u8[sizeof(T)];
+    } source, dest;
+
+    source.u = u;
+
+    for (size_t k = 0; k < sizeof(T); k++)
+        dest.u8[k] = source.u8[sizeof(T) - k - 1];
+
+    return dest.u;
+}
+
+static void  parse_raw_data(uint8_t *raw_data, char **event, char **data) {
+	int event_len, data_len, total_len;
+	
+	memcpy(&event_len, raw_data, sizeof(int));
+	event_len = swap_endian<int>(event_len);
+	
+	memcpy(&data_len, raw_data+4+event_len, sizeof(int));
+	data_len = swap_endian<int>(data_len);
+	
+	Serial.printf("event_len=%d data_len=%d\n", event_len, data_len);
+	
+	*event = (char *) malloc(event_len+1);
+	memset(*event, 0, event_len+1);
+	memcpy(*event, raw_data+4, event_len);
+	
+	*data = (char *) malloc(data_len+1);
+	memset(*data, 0, data_len+1);
+	memcpy(*data, raw_data+4+event_len+4, data_len);
+}
+
+void defaultWebSocketEvent(WebSocketsClient *client, WStype_t type, uint8_t * payload, size_t length) {
+	switch(type) {
+		case WStype_DISCONNECTED:
+			Serial.printf("[WSc] Disconnected!\n");
+			break;
+		case WStype_CONNECTED:
+			Serial.printf("[WSc] Connected to url: %s\n", payload);
+			break;
+		case WStype_TEXT:
+			Serial.printf("[WSc] get text: %s\n", payload);
+			break;
+		case WStype_BIN:
+			Serial.printf("[WSc] get binary length: %u\n", length);
+			hexdump(payload, length);
+			char *event, *data;
+			parse_raw_data(payload, &event, &data);
+			
+			Serial.printf("Got message: event=%s data=%s\n", event, data);
+			client->trigger_event_listeners(event, data);
+			free(event);
+			free(data);
+			break;
+	}
+}
 
 WebSocketsClient::WebSocketsClient() {
     _cbEvent = NULL;
     _client.num = 0;
     _client.extraHeaders = WEBSOCKETS_STRING("Origin: file://");
+	handlers = Vector<int>();
+	onEvent(defaultWebSocketEvent);
 }
 
 WebSocketsClient::~WebSocketsClient() {
     disconnect();
+}
+
+void WebSocketsClient::trigger_event_listeners(char *event, char *data)
+{
+	struct event_handlers *evt_handlers = get_event_handler(event);
+	if (evt_handlers == NULL) {
+		Serial.printf("WARNING: No registered handlers for event: %s\n", event);
+		return;
+	}
+	for(int i = 0; i < evt_handlers->handlers.size(); i++) {
+		void (*fn)(char *) = (void (*)(char *)) evt_handlers->handlers[i];
+		fn(data);
+	}
+}
+
+struct event_handlers *WebSocketsClient::get_event_handler(char *event)
+{
+	for (int i = 0; i < handlers.size(); i++) {
+		struct event_handlers *evt_handlers = (struct event_handlers *) handlers[i];
+		if(strcmp(event, evt_handlers->event) == 0) {
+			Serial.printf("Found event handlers for event: %s\n", event);
+			return evt_handlers;
+		}
+	}
+	return NULL;
+}
+
+void WebSocketsClient::on(char *event, void (*handler_fn)(char *data))
+{
+		struct event_handlers *evt_handlers = get_event_handler(event);
+		if(evt_handlers == NULL) {
+			Serial.printf("on: Found no handlers for event: %s\n", event);
+			evt_handlers = (struct event_handlers *) malloc(sizeof(struct event_handlers));
+			evt_handlers->event = (char *) malloc(strlen(event));
+			strcpy(evt_handlers->event, event);
+			evt_handlers->handlers = Vector<int>();
+			this->handlers.push_back((int) evt_handlers);
+		}
+		evt_handlers->handlers.push_back((int) handler_fn);
+}
+
+int WebSocketsClient::emit(char *event, char *data)
+{
+	// Format is event_size + event + data_size + data
+	
+	int event_len = strlen(event);
+	int data_len = strlen(data);
+	int total_len = 4 + 4 + event_len + data_len;
+	char *buf = (char *) malloc(total_len);
+	
+	// Swap endianness when writing out
+	int event_len_swap = swap_endian<int>(event_len);
+	int data_len_swap = swap_endian<int>(data_len);
+	
+	memset(buf, 0, total_len);
+	memcpy(buf, &event_len_swap, sizeof(int));
+	memcpy(buf+4, event, event_len);
+	
+	memcpy(buf+4+event_len, &data_len_swap, sizeof(int));
+	memcpy(buf+4+event_len+4, data, data_len);
+	
+	sendBIN((uint8_t *) buf, total_len);
+	free(buf);
 }
 
 /**
@@ -329,7 +459,7 @@ void WebSocketsClient::messageReceived(WSclient_t * client, WSopcode_t opcode, u
 			break;
     }
 
-    runCbEvent(type, payload, length);
+    runCbEvent(this, type, payload, length);
 
 }
 
@@ -382,7 +512,7 @@ void WebSocketsClient::clientDisconnect(WSclient_t * client) {
 
     DEBUG_WEBSOCKETS("[WS-Client] client disconnected.\n");
     if(event) {
-        runCbEvent(WStype_DISCONNECTED, NULL, 0);
+        runCbEvent(this, WStype_DISCONNECTED, NULL, 0);
     }
 }
 
@@ -646,7 +776,7 @@ void WebSocketsClient::handleHeader(WSclient_t * client, String * headerLine) {
             DEBUG_WEBSOCKETS("[WS-Client][handleHeader] Websocket connection init done.\n");
             headerDone(client);
 
-            runCbEvent(WStype_CONNECTED, (uint8_t *) client->cUrl.c_str(), client->cUrl.length());
+            runCbEvent(this, WStype_CONNECTED, (uint8_t *) client->cUrl.c_str(), client->cUrl.length());
 
 		} else if(clientIsConnected(client) && client->isSocketIO && client->cSessionId.length() > 0) {
 			sendHeader(client);
