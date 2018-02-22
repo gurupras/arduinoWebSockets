@@ -27,3 +27,5 @@
 *.out
 *.app
 /tests/webSocketServer/node_modules
+
+node_modules
