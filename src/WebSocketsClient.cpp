@@ -95,7 +95,7 @@ WebSocketsClient::WebSocketsClient() {
     _cbEvent = NULL;
     _client.num = 0;
     _client.extraHeaders = WEBSOCKETS_STRING("Origin: file://");
-	handlers = LinkedList<int>();
+	handlers = __LinkedList<int>();
 	onEvent(defaultWebSocketEvent);
 }
 
@@ -136,7 +136,7 @@ void WebSocketsClient::on(char *event, void (*handler_fn)(char *data))
 			evt_handlers = (struct event_handlers *) malloc(sizeof(struct event_handlers));
 			evt_handlers->event = (char *) malloc(strlen(event));
 			strcpy(evt_handlers->event, event);
-			evt_handlers->handlers = LinkedList<int>();
+			evt_handlers->handlers = __LinkedList<int>();
 			this->handlers.add((int) evt_handlers);
 		}
 		evt_handlers->handlers.add((int) handler_fn);

@@ -25,13 +25,13 @@
 #ifndef WEBSOCKETSCLIENT_H_
 #define WEBSOCKETSCLIENT_H_
 
-#include <LinkedList.h>
+#include "LinkedList.h"
 
 #include "WebSockets.h"
 
 struct event_handlers {
 	char *event;
-	LinkedList<int> handlers;
+	__LinkedList<int> handlers;
 };
 
 class WebSocketsClient: private WebSockets {
@@ -100,7 +100,7 @@ class WebSocketsClient: private WebSockets {
         String _host;
         uint16_t _port;
 
-		LinkedList<int> handlers;
+		__LinkedList<int> handlers;
 		
 #if (WEBSOCKETS_NETWORK_TYPE == NETWORK_ESP8266) || (WEBSOCKETS_NETWORK_TYPE == NETWORK_ESP32)
         String _fingerprint;
